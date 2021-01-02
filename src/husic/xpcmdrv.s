@@ -2,6 +2,12 @@ XPCM_CH  = 5
 XPCM2_CH = 4
 XPCM_MPR = 3
 
+; [todo] comments
+; [todo] huc interface
+
+XPCM_FLAG  .equ $01
+XPCM2_FLAG .equ $02
+
     .zp
 _xpcm_bank          .ds 2
 _xpcm_addr          .ds 4
@@ -101,11 +107,11 @@ _pcm_switch:
     sta    psg_chn
 
     ; バンク切り替え
-    tma    #3
+    tma    #XPCM_MPR
     pha
 
     lda     <_xpcm_bank + \2
-    tam     #3
+    tam     #XPCM_MPR
 
     ; 4bitシフト
     lda    <_xpcm_shift + \2
@@ -149,7 +155,7 @@ _pcm_switch:
 
     ; バンク切り替えを戻す
     pla
-    tam    #3
+    tam    #XPCM_MPR
 
     ; シフトフラグを反転
     lda    <_xpcm_shift + \2
@@ -178,17 +184,17 @@ _pcm_switch:
     sta    psg_chn
 
     ; バンク切り替え
-    tma    #3
+    tma    #XPCM_MPR
     pha
     lda    <_xpcm_bank + \2
-    tam    #3
+    tam    #XPCM_MPR
 
     ; バッファに読み出し
     lda    [_xpcm_addr + (\2 * 2)]
     sta    psg_wavebuf
 
     pla
-    tam    #3
+    tam    #XPCM_MPR
 
     ; アドレスポインタ加算
     inc    <_xpcm_addr + (\2 * 2)
@@ -261,10 +267,10 @@ _pcm_intr:
 ; PCMバンク
 _chg_pcmbank:
     txa
-    tam #3
+    tam #XPCM_MPR
     rts
 
-_init_pcmdrv:
+init_pcmdrv:
     stz    <_xpcm_addr
     stz    <_xpcm_addr+1
     stz    <_xpcm_addr+2
@@ -302,4 +308,21 @@ _set_pcmintr:
 
     cli
 
+    rts
+
+; X: channel
+_pcm_check:
+    cpx   #XPCM_CH
+    bne   @l0
+        bbr1    <_xpcm_flags, @end
+            clc
+            rts
+@l0:
+    cpx   #XPCM2_CH
+    bne   @end
+        bbr2    <_xpcm_flags, @end
+            clc
+            rts
+@end:
+    sec
     rts
