@@ -1,0 +1,3 @@
+[submodule "src/huc"]
+	path = src/huc
+	url = https://github.com/RickUACS/huc
