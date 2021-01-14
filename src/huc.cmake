@@ -82,8 +82,8 @@ target_compile_definitions(huc PRIVATE "$<$<C_COMPILER_ID:MSVC>:_CRT_SECURE_NO_W
 
 install(TARGETS pceas huc)
 
-else(HUSIC_BUILD_HUC)
-
-#[todo] find_binary
+set(PCEAS_PATH $<TARGET_FILE:pceas>)
+set(HUC_PATH $<TARGET_FILE:huc>)
+get_filename_component(HUC_INCLUDE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../include/pce REALPATH)
 
 endif(HUSIC_BUILD_HUC)

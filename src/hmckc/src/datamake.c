@@ -292,9 +292,6 @@ int noteToReg(int note)
 	return freqTableO2[i & 0x0F] >> (note >> 4);
 }
 
-
-
-
 /*--------------------------------------------------------------
 	エラー表示
  Input:
@@ -1672,9 +1669,6 @@ void getArpeggio( LINE *lptr )
 					default:
 					num = Asc2Int( ptr, &cnt );
 					if( cnt != 0 ) {
-						if( num < 0 ) {
-							num = (-num)|0x80;
-						}
 						arpeggio_tbl[no][i] = num;
 						arpeggio_tbl[no][0]++;
 						ptr += cnt;
@@ -2982,25 +2976,48 @@ void writeToneEx( FILE *fp, int tbl[128][1024], char *str, int max, int count_mo
 	int		i, j, x;
 
 	fprintf( fp, "%s_table:\n", str );
-	if( max != 0 ) {
-		for( i = 0; i < max; i++ ) {
+    fprintf( fp, "%s_table_lo:\n", str );
+    if( max != 0 ) {
+    	for( i = 0; i < max; i++ ) {
 			if( tbl[i][0] != 0 ) {
-				fprintf( fp, "\tdw\t%s_%03d\n", str, i );
+				fprintf( fp, "\tdwl\t%s_%03d\n", str, i );
 			} else {
-				fprintf( fp, "\tdw\t0\n" );
+				fprintf( fp, "\tdb\t0\n" );
+			}
+		}
+    }
+    fprintf( fp, "%s_table_hi:\n", str );
+    if( max != 0 ) {
+    	for( i = 0; i < max; i++ ) {
+			if( tbl[i][0] != 0 ) {
+				fprintf( fp, "\tdwh\t%s_%03d\n", str, i );
+			} else {
+				fprintf( fp, "\tdb\t0\n" );
 			}
 		}
 	}
 	fprintf( fp, "%s_lp_table:\n", str );
+	fprintf( fp, "%s_lp_table_lo:\n", str );
 	if( max != 0 ) {
 		for( i = 0; i < max; i++ ) {
 			if( tbl[i][0] != 0 ) {
-				fprintf( fp, "\tdw\t%s_lp_%03d\n", str, i );
+				fprintf( fp, "\tdwl\t%s_lp_%03d\n", str, i );
 			} else {
-				fprintf( fp, "\tdw\t0\n" );
+				fprintf( fp, "\tdb\t0\n" );
 			}
 		}
-
+    }
+	fprintf( fp, "%s_lp_table_hi:\n", str );
+	if( max != 0 ) {
+		for( i = 0; i < max; i++ ) {
+			if( tbl[i][0] != 0 ) {
+				fprintf( fp, "\tdwh\t%s_lp_%03d\n", str, i );
+			} else {
+				fprintf( fp, "\tdb\t0\n" );
+			}
+		}
+    }
+    if(max != 0) {
 		for( i = 0; i < max; i++ ) {
 			if( tbl[i][0] != 0 ) {
 				int loop_pos = 0;
@@ -3103,11 +3120,20 @@ void writeToneWTB( FILE *fp, int tbl[_WTB_TONE_MAX][66], char *str, int max )
 
 	fprintf( fp, "%s_data_table:\n", str );
 	if( max != 0 ) {
+    	fprintf( fp, "%s_data_table_lo:\n", str );
 		for( i = 0; i < max; i++ ) {
 			if( tbl[i][0] != 0 ) {
-				fprintf( fp, "\tdw\t%s_%03d\n", str, i );
+				fprintf( fp, "\tdwl\t%s_%03d\n", str, i );
 			} else {
-				fprintf( fp, "\tdw\t0\n" );
+				fprintf( fp, "\tdb\t0\n" );
+			}
+		}
+    	fprintf( fp, "%s_data_table_hi:\n", str );
+		for( i = 0; i < max; i++ ) {
+			if( tbl[i][0] != 0 ) {
+				fprintf( fp, "\tdwh\t%s_%03d\n", str, i );
+			} else {
+				fprintf( fp, "\tdb\t0\n" );
 			}
 		}
 
@@ -6514,9 +6540,15 @@ int data_make( void )
 		if( pitch_mod_max != 0 ) {
 			for( i = 0; i < pitch_mod_max; i++ ) {
 				if( pitch_mod_tbl[i][0] != 0 ) {
+#if 0
 					fprintf( fp, "\tdb\t$%02x,$%02x,$%02x,$%02x\n",
 						pitch_mod_tbl[i][1], pitch_mod_tbl[i][2],
 						pitch_mod_tbl[i][3], pitch_mod_tbl[i][4] );
+#else
+					fprintf( fp, "\tdb\t$%02x,$%02x,$%02x,$%02x\n",
+						pitch_mod_tbl[i][1], pitch_mod_tbl[i][2]/pitch_mod_tbl[i][3],
+						pitch_mod_tbl[i][3]/pitch_mod_tbl[i][2], pitch_mod_tbl[i][4] );
+#endif
 				} else {
 					fprintf( fp, "\tdb\t$00,$00,$00,$00\n" );
 				}

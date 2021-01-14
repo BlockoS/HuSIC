@@ -1,3 +1,6 @@
+add_compile_options("$<$<C_COMPILER_ID:MSVC>:/source-charset:utf-8;/execucution-charset=cp932>")
+add_compile_options("$<$<C_COMPILER_ID:GNU>:--input-charset=utf-8;--exec-charset=cp932>")
+
 include("huc.cmake")
 
 set(hmckc_SRCS 
@@ -9,8 +12,6 @@ set(hmckc_SRCS
 )
 set(hmckc_HDRS hmckc/src/mckc.h)
 add_executable(hmckc ${hmckc_SRCS} ${hmckc_HDRS})
-target_compile_options(hmckc PRIVATE "$<$<C_COMPILER_ID:MSVC>:/source-charset:utf-8;/execution-charset=cp932>")
-target_compile_options(hmckc PRIVATE "$<$<C_COMPILER_ID:GNU>:--input-charset=utf-8;--exec-charset=cp932>")
 
 add_executable(xpcm wav2pd4/xpcm.c)
 
