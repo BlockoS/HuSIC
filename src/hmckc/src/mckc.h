@@ -1,6 +1,8 @@
 /*--------------------------------------------------------------
 	mml2mck	mml to mck assembler data converter
 --------------------------------------------------------------*/
+#ifndef MCKC_H
+#define MCKC_H
 
 #define	VersionNo		27
 
@@ -329,3 +331,5 @@ enum {
 	MCK_SET_TONE = 0xfe,
 	MCK_DATA_END = 0xff
 };
+
+#endif MCKC_H

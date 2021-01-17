@@ -3,7 +3,6 @@ XPCM2_CH = 4
 XPCM_MPR = 3
 
 ; [todo] comments
-; [todo] huc interface
 
 XPCM_FLAG  .equ $01
 XPCM2_FLAG .equ $02
@@ -288,24 +287,21 @@ init_pcmdrv:
     stz    <_xpcm_play_flags
     stz    <_xpcm_flags;
 
-    ; 割り込みタイマー設定
+; Timer interrupt handler
 _set_pcmintr:
-    ; タイマー割り込みを禁止にする
-    rmb    #2, <irq_m
-    stz    irq_status
-    
-    lda    #low(_pcm_intr)
-    sta    timer_jmp
-    lda    #high(_pcm_intr)
-    sta    timer_jmp+1
+    sei
+
+    timer_ack
+
+    irq_set_vec #TIMER, #_pcm_intr
+    irq_enable_vec #TIMER
 
     ; V = 1
     ; (7.159090 / 1024) / V = 6991.29Hz
     stz   timer_cnt
 
-    lda   #$1
-    sta   timer_ctrl
-
+    timer_disable
+    
     cli
 
     rts

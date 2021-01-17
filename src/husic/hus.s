@@ -2,6 +2,13 @@ HUSIC_MPR = 2
 
 MAX_CH = 6
 
+; Envelope reset flags
+RI_TE  =  1 ; TONE
+RI_NE  =  2 ; NOTE
+RI_PE  =  4 ; PITCH
+RI_LFO =  8 ; LFO
+RI_PAN = 16 ; PAN
+
 SND_SEL = $800 ; Channel Selector
 SND_VOL = $801 ; Global Volume
 SND_FIN = $802 ; Fine Freq(FREQ LOW)
@@ -921,7 +928,6 @@ do_seq:
 @go:
     ; Fetch command
     lda    [_seq_ptr]
-    ; [todo] save
     sta    _ch_lastcmd, X
 
     ; note key on
@@ -1022,7 +1028,140 @@ do_seq:
         sta    <_ch_nowbank
     jmp    @loop
 @next:
-; [todo]
+    ; note number and count
+    lda    _ch_lastcmd, X
+    sta    _note_data, X
+
+    inc    <_seq_ptr
+    bne    @l6
+        inc    <_seq_ptr+1
+@l6:
+
+    lda    [seq_ptr]
+    sta    _ch_cnt, X
+
+    inc    <_seq_ptr
+    bne    @l7
+        inc    <_seq_ptr+1
+@l7:
+
+    ; Is it PCM?
+    jsr    _pcm_check
+    bcs    @no_pcm
+        lda    <_ch_topbank
+        tam    #HUSIC_MPR
+
+; [todo]        tmp = xpcmdata + ( sd << 3 );
+; [todo]        pcm_play_data(ch, *(tmp), *(tmp + 2), *(tmp + 4));
+
+        lda    <_ch_nowbank
+        tam    #HUSIC_MPR
+
+; [todo]        set_vol(ch, ch_vol[ch]);
+        rts
+@no_pcm:
+
+    ; envelope setting
+    tst    #EFX_SLAR, _ch_efx, X
+    bne    @no_reset
+        lda    _ch_rst, X
+        sta    <_drv_ax
+@tone:
+        bbs0   <_drv_ax, @note
+            jsr    reset_te
+@note:
+        bbs1   <_drv_ax, @pitch
+            jsr    reset_ne
+@pitch:
+        bbs2   <_drv_ax, @lfo
+            jsr    reset_pe
+@lfo:
+        bbs3   <_drv_ax, @pan
+            jsr    reset_lfo
+@pan
+        bbs3   <_drv_ax, @no_reset
+            jsr    reset_multienv
+@no_reset:
+
+    lda    <_ch_topbank
+    tam    #HUSIC_MPR
+    
+    ; noise
+    cpx    #4
+    bcc    @no_noise
+    
+    lda    _noise_sw-4, X
+    beq    @no_noise
+        lda    _ch_lastcmd, X
+        and    #$1f
+        sta    _noise_freq-4, X
+        ora    #$80
+        sta    SND_NOI
+
+        lda    _ch_vol, X
+        jsr    set_vol
+
+        lda    <_ch_nowbank
+        tam    #HUSIC_MPR
+        rts
+@no_noise:
+
+    ; set pitch
+    lda    _ch_lastcmd, X
+    tay
+    lda    drv_freq_lo, Y
+    sta    _seq_freq_lo, X
+    lda    drv_freq_hi, Y
+    sta    _seq_freq_hi, X
+
+
+    ; detune
+    lda    _detune, X
+    beq    @no_detune
+    bpl    @detune
+            eor    #$ff
+            inc    A
+@detune:
+            clc
+            adc    seq_freq, X
+            sta    seq_freq, X
+@no_detune:
+
+    ; set frequency
+    lda    _seq_freq_lo, X
+    sta    SND_FIN
+    lda    _seq_freq_hi, X
+    and    #$0f
+    sta    SND_ROU
+
+    ; set volume
+    tst    #EFX_SLAR, _ch_efx, X
+    bne    @no_vol
+        lda    _ch_vol, X
+        jsr    set_vol
+@no_vol:
+
+    ; portamento
+    lda    _ch_efx, X
+    bit    #EFX_PORT_ST
+    beq    @portamento_reset
+        and    #~EFX_PORT_ST
+        ora    #EFX_PORT
+        sta    _ch_efx, X
+        bra    @portamento_end
+@portamento_reset:
+        and    #~(EFX_PORT | EFX_PORT_ST);
+        sta    _ch_efx, X
+@portamento_end
+
+    ; reset SLAR flag
+    lda    _ch_efx, X
+    and    #~EFX_SLAR
+    sta    _ch_efx, X
+
+    lda    _ch_nowbank
+    tam    #HUSIC_MPR
+
     rts
 
 
@@ -1043,10 +1182,10 @@ seq_proc_tbl:
     .dw seq_f0
     .dw seq_f1
     .dw seq_f2
-    .dw unused ; f3
+    .dw seq_f3
     .dw seq_f4
-    .dw unused ; f5
-    .dw unused ; f6
+    .dw seq_f5
+    .dw seq_f6
     .dw seq_f7
     .dw seq_f8
     .dw seq_f9
@@ -1057,21 +1196,304 @@ seq_proc_tbl:
     .dw seq_fe
     .dw seq_ff
 
-seq_e6:
-seq_e7:
-seq_e8:
-seq_e9:
-seq_ea:
-seq_eb:
-seq_ec:
-seq_ed:
-seq_ee:
-seq_ef:
-seq_f0:
-seq_f1:
-seq_f2:
-seq_f4:
+seq_f3:
+seq_f5:
+seq_f6:
 unused:
+    rts
+
+; pan envelope.
+seq_e6:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+    lda    [_seq_ptr]
+    ldx    <_reg_ch
+    sta    _multienv_sw, X
+
+    jsr    reset_multienv
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+    rts
+
+; reset arguments
+seq_e7;
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+    lda    [_seq_ptr]
+    ldx    <_reg_ch
+    sta    _ch_rst, X
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+    rts
+
+; set master volume
+seq_e8:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+    lda    [_seq_ptr]
+    sta    SND_VOL
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+    ldx    <_reg_ch
+    rts
+
+; slar
+seq_e9:
+    ldx    <_reg_ch
+    lda    _ch_efx, X
+    ora    #EFX_SLAR
+    sta    _ch_efx, X
+
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+    rts
+
+; HW LFO frequency set
+seq_ea:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    #1
+    sta    SND_SEL
+
+    lda    [_seq_ptr]
+    tay
+    lda    drv_freq_lo, Y
+    sta    _seq_freq_lo+1
+    sta    SND_FIN
+    lda    drv_freq_hi, Y
+    sta    _seq_freq_hi+1
+    and    #$0f
+    sta    SND_ROU
+
+    ; key on
+    lda    #$80
+    sta    SND_MIX
+
+    ldx    <_reg_ch
+    stx    SND_SEL
+    rts
+
+; portamento
+seq_eb:
+    ldx    <_reg_ch
+
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+    lda    [_seq_ptr]
+    sta    _ch_porthi, X
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+    lda    [_seq_ptr]
+    sta    _ch_portlo, X
+
+    stz    _ch_portcnt, X
+
+    lda    _ch_efx, X
+    ora    #EFX_PORT_ST
+    sta    _ch_efx, X
+
+    inc    <_seq_ptr
+    bne    @l2
+        inc    <_seq_ptr+1
+@l2:
+    rts
+
+; HW LFO frequency
+seq_ec:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    [_seq_ptr]
+    sta    SND_LFO
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+    rts
+
+; HW LFO mode
+seq_ed:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    [_seq_ptr]
+    sta    SND_LTR
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+    rts
+
+; bank switching
+seq_ee:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    [_seq_ptr]
+    sta    <_drv_bx
+    ldx    <_reg_ch
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+
+    lda    [_seq_ptr]
+    pha
+    ldy    #1
+    lda    [_seq_ptr], Y
+    sta    <_seq_ptr+1
+    pla
+    sta    <_seq_ptr
+
+    lda    <_drv_bx
+    tam    #HUSIC_MPR
+    sta    <_ch_nowbank
+
+    rts
+
+; xpcm switch
+seq_ef:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    [_seq_ptr]
+    ldx    <_reg_ch
+    jsr    _pcm_switch
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+    rts
+
+; pan
+seq_f0:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    [_seq_ptr]
+    ldx    <_reg_ch
+    sta    _panpod, X
+    sta    SND_PAN
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+    rts
+
+; waveform update
+seq_f1
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    [_seq_ptr]
+    ldx    <_reg_ch
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+
+    pha
+
+    lda    <_ch_topbank
+    tam    #HUSIC_MPR
+
+    pla
+    jsr    snd_chg
+
+    lda    #$ff
+    sta    _tone_sw, X
+
+    lda    <_ch_nowbank
+    tma    #HUSIC_MPR
+
+    rts
+
+; noise command
+seq_f2:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    [_seq_ptr]
+    ldx    <_reg_ch
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
+
+    cpx    #4
+    bcc    @l3
+        cmp    #$00
+        bne    @l30
+            stz    _noise_sw-4, X
+            stz    SND_NOI
+            rts
+@l30
+        lda    #$01
+        sta    _noise_sw-4, X
+@l3:
+    rts
+
+; weight arg: count
+seq_f4:
+    inc    <_seq_ptr
+    bne    @l0
+        inc    <_seq_ptr+1
+@l0:
+
+    lda    [_seq_ptr]
+    ldx    <_reg_ch
+    sta    _ch_cnt, X
+
+    inc    <_seq_ptr
+    bne    @l1
+        inc    <_seq_ptr+1
+@l1:
     rts
 
 ; note envelope
@@ -1379,6 +1801,36 @@ reset_ne:
     sta    _note_envadr_lo, X
     lda    arpeggio_table_hi, Y
     sta    _note_envadr_hi, X
+
+    lda    <_ch_nowbank
+    tam    #HUSIC_MPR
+    rts
+
+; multi envelope reset
+reset_multienv:
+    lda    _multienv_sw, X
+    cmp    #$ff
+    bne    @l0
+        stz    _multienv_sw, X
+        rts
+@l0:
+    lda    <_ch_topbank
+    tam    #HUSIC_MPR
+
+    ldy    _multienv_sw, X
+    lda    multienv_table_lo, Y
+    sta    <_drv_si
+    lda    multienv_table_hi, Y
+    sta    <_drv_si+1
+    lda    [_drv_si]
+    sta    _multi_envcnt_lo, X
+    lda    <_drv_si
+    clc
+    adc    #$04
+    sta    _multi_envadr_lo, X
+    lda    <_drv_si+1
+    adc    #$00
+    sta    _multi_envadr_hi, X
 
     lda    <_ch_nowbank
     tam    #HUSIC_MPR
