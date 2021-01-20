@@ -1,16 +1,9 @@
-
-
+USE_5BITPCM = 0
     .include "startup.asm"
-;    .include "xpcmdrv.s"
+    .include "xpcmdrv.s"
 
 ; [todo] remove
 SONG_MAX = 4
-
-  .zp
-; [todo] remove
-seq_ptr    .ds 2
-ch_topbank .ds 1
-ch_nowbank .ds 1
 
   .bss
 menu_chn .ds 1
@@ -18,24 +11,10 @@ menu_x   .ds 1
 menu_y   .ds 1
 menu_idx .ds 1
 
-song_number .ds 1
-
-; [todo] remove
-song_no    .ds 1
-ch_lastcmd .ds PSG_CHAN_COUNT
-ch_cnt     .ds PSG_CHAN_COUNT
-ch_bank    .ds PSG_CHAN_COUNT
-note_data  .ds PSG_CHAN_COUNT
-seq_pos    .ds PSG_CHAN_COUNT
-seq_freq   .ds PSG_CHAN_COUNT
-xpcm_addr  .ds 4
-xpcm_len   .ds 4
+song_no .ds 1
 
   .code
-
-; [todo] remove
-PRG_TITLE: .db "dummy title",0
-
+PRG_TITLE: .db "husic xxx", 0
 
 ;;----------------------------------------------------------------------------------
 ;;----------------------------------------------------------------------------------
@@ -54,13 +33,21 @@ _timer_pcm:
     pla
 
     cli
-    rti
+    rts
 
 ;;----------------------------------------------------------------------------------
 ;;----------------------------------------------------------------------------------
-vsync_handler:
-    ;_drv_intr
-    rti
+_vsync_drv:
+    pha
+    phx
+    phy
+
+    jsr    drv_intr
+
+    ply
+    plx
+    pla
+    rts
 
     .code
 
@@ -71,16 +58,24 @@ _main:
     ; [todo] set vsync interrupt
     ; [todo] setup vdc interrupts
     
+    ; [todo]
+    lda    #1
+    tam    #4
+
+    lda    #2
+    tam    #HUSIC_MPR
+
     ; clear irq config flag
     stz    <irq_m
     ; set vsync vec
     irq_on INT_IRQ1
 
-    stb    #1, song_number
+    stb    #1, song_no
 
     jsr    select_song
     
-    ; [todo] drv_init(songno);
+    lda    song_no
+    jsr    drv_init
 
     ; clear screen    
     stb    #32, <_al
@@ -94,7 +89,7 @@ _main:
     vdc_wait_vsync
 
     ; sequence pointer
-    stw    <seq_ptr, <_ax
+    stw    <_seq_ptr, <_ax
     stb    #4, <_cl
     ldx    #13
     lda    #3
@@ -102,7 +97,7 @@ _main:
 
     ; top bank
     stz    <_ax+1
-    stb    <ch_topbank, <_ax
+    stb    <_ch_topbank, <_ax
     stb    #2, <_cl
     ldx    #20
     lda    #3
@@ -110,7 +105,7 @@ _main:
 
     ; current mapped song bank
     stz    <_ax+1
-    stb    <ch_nowbank, <_ax
+    stb    <_ch_nowbank, <_ax
     stb    #2, <_cl
     ldx    #23
     lda    #3
@@ -142,7 +137,7 @@ _main:
         ; command
         stz    <_ax+1
         ldx    menu_chn
-        lda    ch_lastcmd, X
+        lda    _ch_lastcmd, X
         sta    <_ax
         stb    #2, <_cl
         ldx    menu_x
@@ -154,7 +149,7 @@ _main:
         ; count
         stz    <_ax+1
         ldx    menu_chn
-        lda    ch_cnt, X
+        lda    _ch_cnt, X
         sta    <_ax
         stb    #2, <_cl
         ldx    menu_x
@@ -166,7 +161,7 @@ _main:
         ; note
         stz    <_ax+1
         ldx    menu_chn
-        lda    note_data, X
+        lda    _note_data, X
         sta    <_ax
         stb    #2, <_cl
         ldx    menu_x
@@ -178,7 +173,7 @@ _main:
         ; bank
         stz    <_ax+1
         ldx    menu_chn
-        lda    ch_bank, X
+        lda    _ch_bank, X
         sta    <_ax
         stb    #2, <_cl
         ldx    menu_x
@@ -188,10 +183,11 @@ _main:
         add    #3, menu_x
 
         ; pointer
-        stz    <_ax+1
         ldx    menu_chn
-        lda    seq_pos, X
+        lda    _seq_pos_lo, X
         sta    <_ax
+        lda    _seq_pos_hi, X
+        stz    <_ax+1
         stb    #2, <_cl
         ldx    menu_x
         lda    menu_y
@@ -200,10 +196,11 @@ _main:
         add    #3, menu_x
 
         ; pointer
-        stz    <_ax+1
         ldx    menu_chn
-        lda    seq_freq, X
+        lda    _seq_freq_lo, X
         sta    <_ax
+        lda    _seq_freq_hi, X
+        sta    <_ax+1
         stb    #2, <_cl
         ldx    menu_x
         lda    menu_y
@@ -227,9 +224,9 @@ _main:
 
         ; pcm data pointer
         ldx    menu_idx
-        lda    xpcm_addr, X 
+        lda    _xpcm_addr, X 
         sta    <_ax
-        lda    xpcm_addr+1, X
+        lda    _xpcm_addr+1, X
         sta    <_ax+1
         stb    #4, <_cl
         ldx    #1
@@ -238,9 +235,9 @@ _main:
 
         ; pcm data length
         ldx    menu_idx
-        lda    xpcm_len, X 
+        lda    _xpcm_len, X 
         sta    <_ax
-        lda    xpcm_len+1, X
+        lda    _xpcm_len+1, X
         sta    <_ax+1
         stb    #4, <_cl
         ldx    #6
@@ -325,34 +322,14 @@ select_song:
 
 ;;----------------------------------------------------------------------------------
 ;;----------------------------------------------------------------------------------
- _sound_dat:
-;    dw	song_000_track_table    ; 0
-;    dw	song_000_loop_table     ; 1
-;    dw	softenve_table          ; 2
-;    dw	softenve_lp_table       ; 3
-;    dw	pitchenve_table         ; 4
-;    dw	pitchenve_lp_table      ; 5
-;    dw	lfo_data                ; 6
-;    dw	song_000_bank_table     ; 7
-;    dw	song_000_loop_bank      ; 8
-;    dw	arpeggio_table          ; 9
-;    dw	arpeggio_lp_table       ; 10
-;    dw	dutyenve_table          ; 11
-;    dw	dutyenve_lp_table       ; 12
-;    dw	multienv_table          ; 13
-;    dw	multienv_lp_table       ; 14
-;    dw	song_addr_table         ; 15
-;
-_pcewav:
-;    dw	pce_data_table
-;
-_xpcmdata:
-;    dw	xpcm_data
+    .code
+    .bank 1
+    .org (4<<13)
+	.include "hus.s"
 
-
-;    .code
-;    .bank DATA_BANK
-
-; [todo] hus title
-
-
+    .data
+    .bank 2
+    .org  (HUSIC_MPR<<13)
+    .include "effect.h"
+    .include "HesTest01.h"
+    

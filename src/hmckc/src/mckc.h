@@ -332,4 +332,4 @@ enum {
 	MCK_DATA_END = 0xff
 };
 
-#endif MCKC_H
+#endif // MCKC_H

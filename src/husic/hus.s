@@ -98,7 +98,7 @@ _lfo_step .ds MAX_CH
 _noise_freq .ds 2
 _noise_sw .ds 2
 
-_song_track_table   .ds 2
+_song_track_table   .ds 2       ; [todo] move to zp
 _song_bank_table    .ds 2
 _song_loop_table    .ds 2
 _song_loop_bank     .ds 2
@@ -139,7 +139,7 @@ snd_saw:
 ;;----------------------------------------------------------------------------------
 drv_init:
     jsr    drv_init_song
-    jsr    init_pcmdrv  ; from xpcmdrv.s
+; [todo]    jsr    init_pcmdrv  ; from xpcmdrv.s
     jsr    drv_setintr
     rts
 
@@ -154,66 +154,51 @@ drv_init_song:
     sei
 
     asl    A
-    tax
-
-    lda    _sound_dat                       ; [todo] don't use sound_dat
-    sta    <_drv_si
-    lda    _sound_dat+1
-    sta    <_drv_si+1
-    
-    ldy    #(2*15)                          ; song_addr_table
-    lda    [_drv_si], Y
-    sta    <_drv_bx
-    iny
-    lda    [_drv_si], Y
-    sta    <_drv_bx+1
-
-    sxy                                     ; song_no
-    lda    [_drv_si], Y
+    tay
+    lda    song_addr_table, Y
     sec
-    sbc    <_drv_bx
+    sbc    song_addr_table
     sta    <_drv_ax
     iny
-    lda    [_drv_si], Y
-    sbc    #$00
+    lda    song_addr_table, Y
+    sec
+    sbc    song_addr_table+1
     sta    <_drv_ax+1
 
-    lda    [_drv_si]                        ; song_000_track_table
+
+    ; song_000_track_table
+    lda    #low(song_000_track_table)
     clc
     adc    <_drv_ax
     sta    _song_track_table
-    ldy    #1
-    lda    [_drv_si], Y
+    lda    #high(song_000_track_table)
     adc    <_drv_ax+1
     sta    _song_track_table+1
-
-    iny
-    lda    [_drv_si], Y                     ; song_000_loop_table
+    
+    ; song_000_loop_table
+    lda    #low(song_000_loop_table)
     clc
     adc    <_drv_ax
-    sta    _song_loop_table
-    iny
-    lda    [_drv_si], Y
+    sta    _song_loop_table        
+    lda    #high(song_000_loop_table)
     adc    <_drv_ax+1
     sta    _song_loop_table+1
 
-    ldy    #(2*7)
-    lda    [_drv_si], Y                     ; song_000_bank_table
+    ; song_000_bank_table
+    lda    #low(song_000_bank_table)
     clc
     adc    <_drv_ax
     sta    _song_bank_table
-    iny
-    lda    [_drv_si], Y
+    lda    #high(song_000_bank_table)
     adc    <_drv_ax+1
     sta    _song_bank_table+1
 
-    iny
-    lda    [_drv_si], Y                     ; song_000_loop_bank
+    ; song_000_loop_bank
+    lda    #low(song_000_loop_bank)
     clc
     adc    <_drv_ax
     sta    _song_loop_bank
-    iny
-    lda    [_drv_si], Y
+    lda    #high(song_000_loop_bank)
     adc    <_drv_ax+1
     sta    _song_loop_bank+1
 
@@ -269,7 +254,7 @@ drv_init_song:
         ldy    <_reg_ch
         stw    _song_bank_table, <_drv_si
         lda    [_drv_si], Y
-        sta    ch_bank, X
+        sta    _ch_bank, X
 
         jsr    snd_saw
 
@@ -307,7 +292,7 @@ drv_setintr:
 ;;
 ;;----------------------------------------------------------------------------------
 drv_intr:
-    stw    #$fffe, <seq_ptr
+    stw    #$fffe, <_seq_ptr
 
     clx
 @loop:
@@ -335,7 +320,8 @@ drv_intr:
             lda    <_ch_nowbank
             sta    _ch_bank, X
 
-; [todo]            chg_cbank(ch_topbank)
+            lda    <_ch_topbank
+            tam    #HUSIC_MPR
 @l0:
         dec    _ch_cnt, X
 
@@ -414,28 +400,48 @@ drv_intr:
         lda    _ch_efx, X
         bit    #EFX_PORT
         beq    @l7
-; [todo]
-;        {
-;            smb0    <_snd_update
-;            /* porthiは符号付き */
-;            if (ch_porthi[sch] & 0x80)                                                                       ; [todo]
-;                diff = (0xFF00 | ch_porthi[sch]);
-;            else
-;                diff = ch_porthi[sch];
-;
-;            /* portloは1/128カウンタの値 */
-;            ch_portcnt[sch] += (ch_portlo[sch] & 0x7F);
-;            if (ch_portcnt[sch] & 0x80)
-;            {
-;                if (ch_portlo[sch] & 0x80)
-;                    diff--;
-;                else
-;                    diff++;
-;
-;                ch_portcnt[sch] &= 0x7F;
-;            }
-;            seq_freq[sch] += diff;
-;        }
+            smb0   <_snd_update
+     
+            stz    <_drv_ax+1
+            ; porthi is signed
+            lda    _ch_porthi, X
+            sta    <_drv_ax
+            bpl    @l60
+                dec    <_drv_ax+1
+@l60:
+            ; portlo is 1/128th of the counter value
+            lda    _ch_portlo, X
+            and    #$7f
+            clc
+            adc    _ch_portcnt, X
+            sta    _ch_portcnt, X
+            bpl    @l61
+                lda    _ch_portlo, X
+                bpl    @l62
+                    sec
+                    lda    <_drv_ax
+                    sbc    #$01
+                    sta    <_drv_ax
+                    lda    <_drv_ax+1
+                    sbc    #$01
+                    sta    <_drv_ax+1
+                    bra    @l63
+@l62:
+                    inc    <_drv_ax
+                    bne    @l63
+                        inc    <_drv_ax+1
+@l63:
+                lda    _ch_portcnt, X
+                and    #$7f
+                sta    _ch_portcnt, X
+@l61:
+            lda    _seq_freq_lo, X
+            clc
+            adc    <_drv_ax
+            sta    _seq_freq_lo, X
+            lda    _seq_freq_hi, X
+            adc    <_drv_ax+1
+            sta    _seq_freq_hi, X
 @l7:
         ; update frequency
         bbr0    <_snd_update, @l8
@@ -938,10 +944,11 @@ do_seq:
 
     cmp    #$e6
     bcc    @l1
-        ; use jump table if cmd is e8 or above.
+        ; use jump table if cmd is e6 or above.
         sec
         sbc    #$e6
         asl    A
+        tax
         jsr    seq_proc
         ldx    <_reg_ch
         bra    @loop
@@ -959,9 +966,9 @@ do_seq:
         bne    @l22                     ; if loop_cnt[X] == 1
             stz    _loop_cnt, X         ;       loop_cnt[X] = 0
             ldy    #$01                 ;       seq_ptr = seq_ptr[0] | seq_ptr[1]
-            lda    [seq_ptr], Y
+            lda    [_seq_ptr], Y
             tay
-            lda    [seq_ptr]
+            lda    [_seq_ptr]
             sta    <_seq_ptr
             sty    <_seq_ptr+1
             bra    @loop
@@ -1037,7 +1044,7 @@ do_seq:
         inc    <_seq_ptr+1
 @l6:
 
-    lda    [seq_ptr]
+    lda    [_seq_ptr]
     sta    _ch_cnt, X
 
     inc    <_seq_ptr
@@ -1051,13 +1058,45 @@ do_seq:
         lda    <_ch_topbank
         tam    #HUSIC_MPR
 
-; [todo]        tmp = xpcmdata + ( sd << 3 );
-; [todo]        pcm_play_data(ch, *(tmp), *(tmp + 2), *(tmp + 4));
+        lda    _ch_lastcmd, X
+        stz    <_drv_si+1
+        asl    a
+        rol    <_drv_si+1
+        asl    a
+        rol    <_drv_si+1
+        asl    a
+        rol    <_drv_si+1
+        clc
+        adc    #low(xpcm_data)
+        sta    <_drv_si
+        lda    #high(xpcm_data)
+        adc    <_drv_si+1
+        sta    <_drv_si+1
+
+        cly
+        lda    [_drv_si], Y
+        sta    <_si
+        iny
+        lda    [_drv_si], Y
+        sta    <_si+1
+        iny
+        lda    [_drv_si], Y
+        sta    <_al
+        iny
+        lda    [_drv_si], Y
+        sta    <_ah
+        iny
+        lda    [_drv_si], Y
+        sta    <_bl
+
+        jsr    pcm_play_data
 
         lda    <_ch_nowbank
         tam    #HUSIC_MPR
 
-; [todo]        set_vol(ch, ch_vol[ch]);
+        lda    _ch_vol, X
+        jsr    set_vol
+
         rts
 @no_pcm:
 
@@ -1079,7 +1118,7 @@ do_seq:
         bbs3   <_drv_ax, @pan
             jsr    reset_lfo
 @pan
-        bbs3   <_drv_ax, @no_reset
+        bbs4   <_drv_ax, @no_reset
             jsr    reset_multienv
 @no_reset:
 
@@ -1116,15 +1155,20 @@ do_seq:
 
 
     ; detune
+    cly
     lda    _detune, X
     beq    @no_detune
     bpl    @detune
             eor    #$ff
             inc    A
+            ldy    #$ff
 @detune:
             clc
-            adc    seq_freq, X
-            sta    seq_freq, X
+            adc    _seq_freq_lo, X
+            sta    _seq_freq_lo, X
+            tya
+            adc    _seq_freq_hi, X
+            sta    _seq_freq_hi, X
 @no_detune:
 
     ; set frequency
@@ -1629,7 +1673,7 @@ seq_fd:
     ldx    <_reg_ch
     sta    _ch_vol, X
 
-; [todo]		set_vol(ch, j);
+    jsr    set_vol
     rts
 
 ; set tone
@@ -1641,7 +1685,7 @@ seq_fe:
 
     ldx    <_reg_ch
     ldy    #$01
-    lda    [seq_ptr], Y
+    lda    [_seq_ptr], Y
     bpl    @l1
         lda    #$ff
 @l1:
@@ -1670,7 +1714,7 @@ seq_ff:
     asl    A
     tay
     lda    [_drv_si], Y
-    sta    <seq_ptr
+    sta    <_seq_ptr
     iny
     lda    [_drv_si], Y
     sta    <_seq_ptr+1
@@ -1811,7 +1855,8 @@ reset_multienv:
     lda    _multienv_sw, X
     cmp    #$ff
     bne    @l0
-        stz    _multienv_sw, X
+        stz    multienv_table_lo, X
+        stz    multienv_table_hi, X
         rts
 @l0:
     lda    <_ch_topbank
