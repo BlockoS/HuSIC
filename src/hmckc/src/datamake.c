@@ -3818,7 +3818,8 @@ char *setCommandBufN( CMD *cmd, int com_no, char *ptr, int line, int enable )
 		oct_ofs++;
 	}
 
-	note = ((octave+oct_ofs)<<4)+com_no;
+//	note = ((octave+oct_ofs)<<4)+com_no;
+ 	note = ((octave+oct_ofs-2)*12)+com_no;
 	/* 音階の範囲チェック */
 	if( note < 0 ) {
 		switch( note ) {
@@ -3842,7 +3843,6 @@ char *setCommandBufN( CMD *cmd, int com_no, char *ptr, int line, int enable )
 		cmd->cmd  = note;
 		cmd->len  = len;
 	}
-
 	return ptr;
 }
 

@@ -504,20 +504,14 @@ drv_noteenv:
     bne    @l1
         ldy    _note_sw, X
         lda    arpeggio_lp_table_lo, Y
+        sta    _note_envadr_lo, X
         sta    <_drv_si
         lda    arpeggio_lp_table_hi, Y
+        sta    _note_envadr_hi, X
         sta    <_drv_si+1
 
         lda    [_drv_si]
-        sta    _note_envadr_lo, X
-        sta    <_drv_di
-        ldy    #1
-        lda    [_drv_si], Y
-        sta    _note_envadr_hi, X
-        sta    <_drv_di+1
-
-        lda    [_drv_di]
-
+        
         inc    _note_envadr_lo, X
         bne    @l1
             inc    _note_envadr_hi, X
@@ -551,25 +545,20 @@ drv_toneenv:
     bne    @l1
         ldy    _tone_sw, X
         lda    dutyenve_lp_table_lo, Y
+        sta    _tone_envadr_lo, X
         sta    <_drv_si
         lda    dutyenve_lp_table_lo, Y
+        sta    _tone_envadr_hi, X
         sta    <_drv_si+1
       
         lda    [_drv_si]
-        sta    _tone_envadr_lo, X
-        sta    <_drv_si
-        ldy    #1
-        lda    [_drv_si], Y
-        sta    _tone_envadr_hi, X
-        sta    <_drv_si+1
-
-        lda    [_drv_si]
-@l1:
 
     inc    _tone_envadr_lo, X
     bne    @l0
         inc    _tone_envadr_hi, X
 @l0:
+
+@l1:
 
     ; update waveform
     jsr    snd_chg
@@ -591,7 +580,7 @@ snd_chg:
     lda    pce_data_table_lo, Y
     sta    <_drv_si
     lda    pce_data_table_hi, Y
-    adc    <_drv_si+1
+    sta    <_drv_si+1
 
     ; copy waveform
     stz    SND_MIX
@@ -642,7 +631,7 @@ drv_pitchenv:
         bne    @l1
             inc    _pitch_envadr_hi, X
 @l1:
-
+    
     cpx    #3
     bcs    @l2
     ldy    _noise_sw-4, X
@@ -661,9 +650,10 @@ drv_pitchenv:
         sta    SND_NOI
         pla
 @l2:
-
-    cmp    #$80
-    bne    @l4
+    
+    bit    #$80
+    beq    @l4
+        and    #$7f
         eor    #$ff
         adc    _seq_freq_lo, X
         sta    _seq_freq_lo, X
@@ -1146,8 +1136,7 @@ do_seq:
 @no_noise:
 
     ; set pitch
-    lda    _ch_lastcmd, X
-    tay
+    ldy    _ch_lastcmd, X
     lda    drv_freq_lo, Y
     sta    _seq_freq_lo, X
     lda    drv_freq_hi, Y
@@ -1159,6 +1148,7 @@ do_seq:
     lda    _detune, X
     beq    @no_detune
     bpl    @detune
+            and    #$7f
             eor    #$ff
             inc    A
             ldy    #$ff
@@ -1743,9 +1733,11 @@ reset_te:
         lda    <_ch_topbank
         tam    #HUSIC_MPR
 
-        lda    dutyenve_table_lo, X
+        tay
+
+        lda    dutyenve_table_lo, Y
         sta    _tone_envadr_lo, X
-        lda    dutyenve_table_hi, X
+        lda    dutyenve_table_hi, Y
         sta    _tone_envadr_hi, X
 
         lda    <_ch_nowbank
